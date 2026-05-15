@@ -1,0 +1,53 @@
+# Documentación: Proceso 1 (La Máquina de Guiones)
+
+El **Proceso 1** es el motor principal donde ocurre la magia. Su propósito es llevar tu proyecto desde la "Estrella Polar" (tu Título y Miniatura del Proceso 0) hasta tener un **guion completo, editado y estructurado**, dividiendo toda la carga de trabajo en una serie de **Subprocesos** súper especializados.
+
+Al igual que un estudio de producción real, automatiza la extracción de la información, el análisis, la escritura y la edición rítmica paso a paso. No necesitas saber programación; el proceso actúa como tu director de operaciones.
+
+---
+
+## 📥 El Punto de Partida: Las Fuentes (Sources)
+Poco después de iniciar el proyecto, ingresas las **URLs o enlaces** de los videos (YouTube) y/o artículos que usarás como base de tu investigación.
+* **Extracción automática:** El sistema absorbe silenciosamente el texto de esos artículos o las transcripciones de los videos ("las fuentes").
+* Todo queda guardado y listo para alimentar la inteligencia artificial en los siguientes pasos.
+
+---
+
+## ⚙️ El Flujo: Los 6 Subprocesos
+
+Aquí desglosamos cada parada del tren desde la perspectiva de alguien de producción, sin términos complicados de código. Recuerda que, en cada paso, el sistema genera **Mega-Prompts** que tú llevas a tu IA favorita para escribir los textos, manteniendo tú el control creativo definitivo.
+
+### 🧭 Subproceso 1: El Análisis Estratégico
+**¿Qué hace?**  Genera el prompt maestro para que le ordenes a la IA que lea todas las fuentes extraídas y analice el panorama completo.  
+**El objetivo:** Determinar el ángulo más interesante, sorprendente y dramático de la información, guiándose siempre por la promesa del Título que ya habías elegido en el Proceso 0.
+
+### 📐 Subproceso 2: Estructura e Investigación (Deep Research)
+**¿Qué hace?** Tomando el Análisis Estratégico como base, le da a tu proyecto forma de documental.
+1. **La Estructura:** Divide el video exactamente en partes o "Subtemas" (Parte 1, Parte 2, etc.) de forma lógica.
+2. **Investigación Profunda (Deep Research):** Te lanza prompts para expandir información y conseguir "Información Interna".
+3. **Segmentación Mágica:** Una vez que tienes una investigación masiva, en este paso el sistema hace algo increíble por ti de forma automática: usa IA para **dividir toda esa montaña de investigación en carpetas separadas (Segmentos) para cada subtema**. Así, la Parte 2 solo tendrá los datos de la Parte 2, y no tendrás que bucear en información inútil más adelante.
+
+### 🎣 Subproceso 3: La Introducción (El Gancho)
+La introducción exige perfección para que nadie abandone tu video en los primeros minutos. Por eso se hace en dos rondas (Ensamblaje):
+1. Formula el prompt principal usando tu investigación.
+2. Afina mecánicas avanzadas de retención (Ganchos, Preguntas Abiertas e "Índices") para lograr una retención altísima del espectador.
+
+### 📖 Subproceso 4: El Cuerpo del Documental (Por Bloques)
+**¿Qué hace?** Empieza a escribir el núcleo del documental pedazo a pedazo de acuerdo a la estructura del Subproceso 2.
+* Al pedirle a la IA que escriba una sección específica (Ej: la Parte 2), el sistema inteligentemente inyecta **solo la investigación ya masticada de esa parte** y **el texto de lo que escribiste en la parte anterior**. Esto permite que la IA recuerde el contexto, pero sin sobrecargarse de información inútil, garantizando un texto fluido que tiene sentido de principio a fin.
+
+### 🎬 Subproceso 5: El Cierre y Ensamblaje Final
+**¿Qué hace?** 
+1. Genera un cierre/salida ágil y poderoso basado en todo el texto escrito hasta ahora.
+2. **El Ensamblaje:** El sistema toma la Intro, todas las partes del cuerpo, junta el Cierre, y lo comprime en **El Guion Completo**.
+3. Funciones extra: Automáticamente cuenta todas las palabras y te **calcula los minutos estimados** de duración para tu voz en off.
+
+### ✂️ Subproceso 6: Edición Maestra y Reducción "Quirúrgica"
+**¿Qué hace?**  Aunque el guion esté completo, necesitas ritmo de YouTube, no un libro aburrido.
+1. **Edición Maestra:** Pasa el guion entero a través de un último prompt de revisión general garantizando fluidez, suspenso y buen fraseo.
+2. **Poda o Reducción Quirúrgica:**  Si grabas tu voz en off y descubres que una de las secciones (ej: la Parte 3) duró demasiado tiempo... tiene un panel de "Poda". Le dices: *"Mi audio dura 3 minutos, pero quiero que dure 2"*, y te generará un prompt de "Cirugía de reducción" de emergencia. La IA cortará "grasa", palabras innecesarias y explicaciones redundantes, **manteniendo intacta la historia y la energía**, especialmente diseñada para que el flujo de lectura (TTS) nunca se sienta robótico.
+
+---
+
+> [!NOTE] 
+> **Resumen del Flujo de Trabajo:** Como notas, el Proceso 1 es altamente sistemático. Vas bajando en cascada: De analizar la temática (1), a estructurarla en pedazos (2), enganchar al usuario (3), escribir la historia bloque a bloque (4), juntarla con su cierre (5), y pulirla al máximo (6). Todo en un entorno donde nunca copias el mismo texto dos veces gracias a las bases de datos de memoria del sistema.

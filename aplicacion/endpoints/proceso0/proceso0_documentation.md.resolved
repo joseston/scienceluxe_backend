@@ -1,0 +1,58 @@
+# Documentación: Proceso 0 (La Promesa del Video)
+
+El **Proceso 0** es la etapa de **Pre-producción** y conceptualización de los videos documentales científicos largos (long-form English science documentary videos). 
+
+Su propósito principal es forzar al creador a definir exactamente **cuál es la promesa del video** (mediante un Título y una idea de Miniatura/Thumbnail) **antes** de escribir una sola línea del guion. Esto garantiza que el concepto tenga potencial de clics (alta curiosidad y visualmente impactante) antes de invertir esfuerzo en el desarrollo del video.
+
+---
+
+## 🚀 Filosofía y Propósito
+
+El Proceso 0 está diseñado bajo el principio de que **el título y la miniatura dictan el contenido del video, y no al revés**. 
+
+No requiere un script previo. Ahora el Proceso 0 se encarga de iniciar todo tu proyecto automáticamente con tan solo empezar con una simple **Idea Cruda (Raw Idea)** del usuario. Tampoco realiza llamadas directas a la API de IAs complejas de espaldas a ti; en su lugar, actúa como un asistente experto que te genera _prompts_ súper estructurados y listos para que solo los copies y pegues en tus herramientas favoritas (como ChatGPT, Claude, Midjourney o Flux).
+
+## 🗂️ Arquitectura de Datos
+
+* **Almacenamiento Local:** Los borradores (*drafts*) se guardan de forma local e independiente en archivos `.json` dentro del directorio `data/proceso0/`.
+* **Estados del Borrador (Status Lifecycle):**
+  1. `idea`: El borrador acaba de ser creado con la idea principal.
+  2. `titles_generated`: Se ha generado el prompt de títulos.
+  3. `title_selected`: El usuario ha guardado el título ganador.
+  4. `thumbnail_generated`: Se ha generado el prompt de miniaturas. (Proceso Completo).
+
+## ⚙️ Flujo de Operación (Paso a Paso)
+
+El flujo se divide en 3 pasos principales dentro de la interfaz:
+
+### Paso 1: Prompt de Títulos
+
+1. El usuario introduce su **Idea Cruda (Raw Idea)** (Ej. "Quiero hacer un documental sobre qué pasaría si Júpiter se convirtiera en una estrella").
+2. El backend (mediante la función `build_title_prompt`) inyecta esta idea en una plantilla de ingeniería de prompts muy estricta.
+3. El frontend muestra un **Prompt Generado**. El usuario debe copiar este texto y pegarlo en una IA externa de texto.
+   * **Reglas del prompt de título generado:** Pide exactamente 12 opciones en inglés, estilo premium, documental, misterioso, entre 55-72 caracteres, sin símbolos raros, y cada título debe hacer una **promesa específica**.
+
+### Paso 2: Título Ganador
+
+1. Una vez que la IA externa le da al usuario las opciones, el usuario elige una y la pega manualmente en la plataforma de vuelta.
+2. Se confirma y guarda como el `selected_title`. Esta será la base para todo lo siguiente.
+
+### Paso 3: Prompt de Thumbnail (Miniatura)
+
+1. Con la Idea Cruda original y el **Título Ganador**, el sistema (mediante `build_thumbnail_prompt`) genera un prompt optimizado para IAs de imágenes (como Midjourney o Flux).
+2. De la misma forma, el usuario lo copia y se lo lleva a la IA de imágenes.
+3. **Reglas del prompt de miniatura generado:** Produce 3 opciones visuales, estilo *photorealistic/cinematic*. Da directrices ultra precisas sobre dónde colocar el posible texto en la miniatura (reglas estrictas contra texto centrado; obligando que vaya a los bordes o esquinas para hacer que el diseño parezca asimétrico y profesional).
+
+### Conexión "Mágica" con el Proceso 1 (Creación Automática de Proyecto)
+
+Una vez que has completado el Proceso 0 y tienes definida tu "Estrella Polar" (estado completado), el sistema se conecta de forma fluida con el entorno del **Proceso 1**. Con un clic en la interfaz, ocurre la magia tras bambalinas:
+
+El sistema **crea automáticamente la carpeta de proyecto de guion** para ti, traspasando toda la información que ya conseguiste, de forma que no tengas que repetir ningún esfuerzo:
+* **Tu idea original (Raw Idea):** Viaja intacta y queda guardada como referencia en el nuevo entorno, para recordar de dónde nació todo el concepto. Ojo: Es solo para ti, para no ensuciar a las IAs del guion.
+* **Tu Título Ganador y el Prompt de Miniatura:** Se inyectan directamente en el corazón del nuevo proyecto, listos para guiar tu guion.
+* **Historial Conectado:** El nuevo proyecto sabrá y recordará siempre de qué idea y borrador original proviene, trazando una conexión perfecta.
+
+De esta forma, en segundos pasas de tener apenas una idea suelta, a estar sentado en el estudio completo de guionaje, con tu "Estrella Polar" configurada y lista para trabajar.
+
+> [!NOTE]
+> Todo este flujo ha sido pensado para darte el gran control creativo de conceptualizar "a mano" usando tus IA de nicho favoritas, pero eliminando inmediatamente toda fricción a la hora de pasar tu idea ganadora al estudio de producción oficial. Así de fácil.
