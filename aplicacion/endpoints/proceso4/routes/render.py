@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from ..helpers import (
 	_get_final_mp3_path,
 	_get_video_duration,
 	_build_section_title_metadata,
+	ensure_scene_media_local_file,
+	normalize_audio_track_file_path,
 )
 from ..render_ffmpeg import (
 	_run_ffmpeg,
@@ -40,6 +43,12 @@ from ..render_ffmpeg import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _prepare_render_work_dir(work_dir: Path) -> None:
+	"""Start each render from a clean workspace to avoid stale intermediates."""
+	shutil.rmtree(work_dir, ignore_errors=True)
+	work_dir.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +86,7 @@ def render_video(pid: int):
 	).all()
 	media_by_scene: dict[int, list[Proceso4SceneMedia]] = {}
 	for m in all_media:
+		ensure_scene_media_local_file(m)
 		media_by_scene.setdefault(m.scene_num, []).append(m)
 
 	# Allow rendering even if some scenes have no media (they become black screen)
@@ -104,7 +114,7 @@ def render_video(pid: int):
 
 	job_dir = get_job_dir(pid)
 	work_dir = job_dir / 'output' / 'render_work'
-	work_dir.mkdir(parents=True, exist_ok=True)
+	_prepare_render_work_dir(work_dir)
 	output_path = job_dir / 'output' / 'final_video.mp4'
 
 	try:
@@ -373,6 +383,12 @@ def render_video(pid: int):
 		#   N+1.. = extra tracks (sfx, etc.)
 
 		extra_tracks = Proceso4AudioTrack.query.filter_by(proceso1_job_id=pid).all()
+		normalized_extra_tracks = False
+		for track in extra_tracks:
+			if normalize_audio_track_file_path(track):
+				normalized_extra_tracks = True
+		if normalized_extra_tracks:
+			db.session.commit()
 		section_tracks = Proceso4SectionTrack.query.filter_by(proceso1_job_id=pid).all()
 		reverb_config = Proceso4ReverbConfig.query.get(pid)
 
@@ -493,8 +509,8 @@ def render_video(pid: int):
 			})
 			return jsonify({'error': 'FFmpeg render failed.', 'details': result.stderr[-300:]}), 500
 
-		# Clean up work dir
-		# shutil.rmtree(work_dir, ignore_errors=True)
+		# Keep only the final artifact once the render completed successfully.
+		shutil.rmtree(work_dir, ignore_errors=True)
 
 		_save_state(render_state, {
 			'status': 'completed',
@@ -528,4 +544,3 @@ def download_video(pid: int):
 		return jsonify({'error': 'Video no renderizado aún.'}), 404
 	return send_file(str(output_path), mimetype='video/mp4', as_attachment=True,
 					 download_name=f'scienceluxe_video_{pid}.mp4')
-

@@ -20,6 +20,8 @@ from ..helpers import (
 	get_or_create_subprocess_state,
 	get_job_dir,
 	_build_section_title_metadata,
+	ensure_scene_media_local_file,
+	ensure_scene_media_proxy_local_file,
 )
 from ..render_ffmpeg import (
 	_build_black_scene,
@@ -88,6 +90,10 @@ def preview_scene(pid: int, scene_num: int):
 		proceso1_job_id=pid,
 		scene_num=scene_num,
 	).order_by(Proceso4SceneMedia.clip_index).all()
+	for media in media_list:
+		ensure_scene_media_local_file(media)
+		if media.proxy_path:
+			ensure_scene_media_proxy_local_file(media)
 
 	_ai_state = Proceso4SubprocessState.query.filter_by(
 		proceso1_job_id=pid, subprocess_key='auto_indice'
@@ -313,9 +319,9 @@ def generate_proxies(pid: int):
 
 	for rec in records:
 		# Skip if proxy already exists and is valid
-		if rec.proxy_path and Path(rec.proxy_path).exists():
+		if rec.proxy_path and (Path(rec.proxy_path).exists() or ensure_scene_media_proxy_local_file(rec)):
 			continue
-		if not Path(rec.file_path).exists():
+		if not Path(rec.file_path).exists() and not ensure_scene_media_local_file(rec):
 			continue
 		proxy = _generate_proxy(rec.file_path, rec.id)
 		if proxy:
@@ -327,4 +333,3 @@ def generate_proxies(pid: int):
 	db.session.commit()
 	logger.info(f"[P4] generate-proxies job={pid}: {generated}/{total} generated")
 	return jsonify({'generated': generated, 'total': total})
-

@@ -28,8 +28,10 @@ from aplicacion.models.proceso4 import (
 )
 
 from .ffmpeg_setup import FFPROBE_BIN, FFMPEG_BIN
+from config import STORAGE_ROOT as STORAGE_ROOT_CONFIG
 
 logger = logging.getLogger(__name__)
+STORAGE_ROOT = Path(STORAGE_ROOT_CONFIG)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -39,8 +41,82 @@ def get_workspace_data_dir() -> Path:
 	return Path(__file__).resolve().parents[4] / 'data'
 
 
-def get_job_dir(proceso1_job_id: int) -> Path:
+def _get_video_id(proceso1_job_id: int) -> str:
+	"""Return the Proceso1Job video_id, or the numeric ID as a safe fallback."""
+	try:
+		job = Proceso1Job.query.get(proceso1_job_id)
+		if job and job.video_id:
+			return _re.sub(r'[^A-Za-z0-9_\-]', '_', str(job.video_id))[:60]
+	except Exception:
+		pass
+	return str(proceso1_job_id)
+
+
+def get_legacy_job_dir(proceso1_job_id: int) -> Path:
+	"""Legacy Proceso 4 workspace under the repo-local data directory."""
 	return get_workspace_data_dir() / 'proceso4' / str(proceso1_job_id)
+
+
+def _get_storage_job_dir(proceso1_job_id: int) -> Path:
+	"""Persistent Proceso 4 workspace under STORAGE_ROOT."""
+	video_id = _get_video_id(proceso1_job_id)
+	return STORAGE_ROOT / f'job_{proceso1_job_id}_{video_id}' / 'proceso4'
+
+
+def get_job_dir(proceso1_job_id: int) -> Path:
+	"""Return the persistent Proceso 4 workspace, migrating legacy dirs on demand."""
+	job_dir = _get_storage_job_dir(proceso1_job_id)
+	legacy_dir = get_legacy_job_dir(proceso1_job_id)
+
+	if not job_dir.exists() and legacy_dir.exists():
+		try:
+			job_dir.parent.mkdir(parents=True, exist_ok=True)
+			shutil.move(str(legacy_dir), str(job_dir))
+			logger.info(f"[P4] Migrated legacy job dir {legacy_dir} -> {job_dir}")
+		except Exception as exc:
+			logger.warning(f"[P4] Could not migrate legacy job dir {legacy_dir} -> {job_dir}: {exc}")
+
+	return job_dir
+
+
+def normalize_legacy_job_path(path_str: str | None, proceso1_job_id: int) -> str | None:
+	"""Translate legacy data/proceso4/<pid>/... paths to STORAGE_ROOT job paths."""
+	if not path_str:
+		return path_str
+
+	raw_path = Path(str(path_str))
+	legacy_dir = get_legacy_job_dir(proceso1_job_id)
+	try:
+		rel = raw_path.relative_to(legacy_dir)
+	except ValueError:
+		return str(raw_path)
+
+	return str(get_job_dir(proceso1_job_id) / rel)
+
+
+def normalize_audio_track_file_path(record: Proceso4AudioTrack) -> bool:
+	"""Update persisted audio track paths when a job moved from data/ to STORAGE_ROOT."""
+	new_path = normalize_legacy_job_path(record.file_path, record.proceso1_job_id)
+	if not new_path or new_path == record.file_path:
+		return False
+	record.file_path = new_path
+	return True
+
+
+def normalize_render_state_output_path(state: Proceso4SubprocessState) -> bool:
+	"""Update legacy render output paths stored in Proceso4SubprocessState.output.videoPath."""
+	if not state or state.subprocess_key != 'render' or not state.output_payload:
+		return False
+
+	output = dict(state.output_payload or {})
+	current = output.get('videoPath')
+	new_path = normalize_legacy_job_path(current, state.proceso1_job_id)
+	if not new_path or new_path == current:
+		return False
+
+	output['videoPath'] = new_path
+	state.output_payload = output
+	return True
 
 
 def get_or_create_job(proceso1_job_id: int) -> Proceso4Job:
@@ -211,6 +287,38 @@ def _get_video_duration(filepath: str) -> float | None:
 
 	logger.error(f"[P4] Could NOT detect duration for {filepath} — all methods failed!")
 	return None
+
+
+def ensure_scene_media_local_file(clip: Proceso4SceneMedia) -> bool:
+	"""Ensure scene media exists locally when backed by the central clip library."""
+	path = Path(str(clip.file_path))
+	if path.exists():
+		return True
+	if not getattr(clip, 'library_clip_id', None):
+		return False
+	try:
+		from aplicacion.endpoints.clip_library import ensure_clip_library_file_local
+		return ensure_clip_library_file_local(clip.file_path)
+	except Exception as exc:
+		logger.warning(f"[P4] Could not fetch library clip for scene media {clip.id}: {exc}")
+		return False
+
+
+def ensure_scene_media_proxy_local_file(clip: Proceso4SceneMedia) -> bool:
+	"""Ensure a stored proxy exists locally when it belongs to the central clip library."""
+	if not getattr(clip, 'proxy_path', None):
+		return False
+	path = Path(str(clip.proxy_path))
+	if path.exists():
+		return True
+	if not getattr(clip, 'library_clip_id', None):
+		return False
+	try:
+		from aplicacion.endpoints.clip_library import ensure_clip_library_file_local
+		return ensure_clip_library_file_local(clip.proxy_path)
+	except Exception as exc:
+		logger.warning(f"[P4] Could not fetch library proxy for scene media {clip.id}: {exc}")
+		return False
 
 
 def _parse_mp4_duration(filepath: str) -> float | None:
@@ -481,4 +589,3 @@ def _build_section_title_metadata(
 			}
 
 	return metadata_by_scene
-

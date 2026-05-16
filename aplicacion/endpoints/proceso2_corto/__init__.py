@@ -7,13 +7,14 @@ import json
 from aplicacion import db
 from aplicacion.models.proceso1_corto import Proceso1CortoJob
 from aplicacion.models.proceso2_corto import Proceso2CortoJob, Proceso2CortoSubprocessState
+from config import STORAGE_ROOT as STORAGE_ROOT_CONFIG
 
 
 proceso2_corto_bp = Blueprint('proceso2_corto', __name__)
 
 
 # Raíz de almacenamiento persistente en disco
-STORAGE_ROOT = Path("D:/scienceluxe_2026")
+STORAGE_ROOT = Path(STORAGE_ROOT_CONFIG)
 
 # Duración máxima permitida para un audio corto: 2 minutos
 MAX_AUDIO_DURATION_SECONDS = 120

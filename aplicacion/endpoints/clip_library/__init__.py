@@ -25,6 +25,8 @@ from aplicacion.models.proceso4 import Proceso4SceneMedia
 
 clip_library_bp = Blueprint('clip_library', __name__)
 logger = logging.getLogger(__name__)
+_RCLONE_FETCH_LOCKS: dict[str, threading.Lock] = {}
+_RCLONE_FETCH_LOCKS_GUARD = threading.Lock()
 
 # ------------------------------------------------------------------ #
 #  FFmpeg / FFprobe — reuse Proceso 4's resolved binaries              #
@@ -42,9 +44,119 @@ def _get_ffmpeg_bins():
 
 def _clips_dir() -> Path:
 	"""Root directory for the clip library files."""
-	d = Path(current_app.config.get('CLIPS_LIBRARY_DIR', r'H:\Mi unidad\Scienceluxe_clips'))
+	d = Path(current_app.config['CLIPS_LIBRARY_DIR'])
 	d.mkdir(parents=True, exist_ok=True)
 	return d
+
+
+def _rclone_bin() -> str:
+	return str(current_app.config.get('RCLONE_BIN') or 'rclone')
+
+
+def _clips_remote() -> str:
+	return str(current_app.config.get('CLIPS_LIBRARY_RCLONE_REMOTE') or '').strip()
+
+
+def _clip_rel_path(path_str: str | Path) -> str | None:
+	try:
+		return Path(path_str).resolve().relative_to(_clips_dir().resolve()).as_posix()
+	except Exception:
+		return None
+
+
+def _clip_remote_path(path_str: str | Path) -> str | None:
+	remote = _clips_remote()
+	rel = _clip_rel_path(path_str)
+	if not remote or not rel:
+		return None
+	return f"{remote.rstrip('/')}/{rel}"
+
+
+def _get_rclone_fetch_lock(path_str: str | Path) -> threading.Lock:
+	key = str(Path(path_str))
+	with _RCLONE_FETCH_LOCKS_GUARD:
+		lock = _RCLONE_FETCH_LOCKS.get(key)
+		if lock is None:
+			lock = threading.Lock()
+			_RCLONE_FETCH_LOCKS[key] = lock
+		return lock
+
+
+def ensure_clip_library_file_local(path_str: str | Path | None) -> bool:
+	"""Ensure a Clip Library file exists locally, fetching it from rclone on demand."""
+	if not path_str:
+		return False
+	local_path = Path(path_str)
+	if local_path.exists():
+		return True
+
+	remote_path = _clip_remote_path(local_path)
+	if not remote_path:
+		return False
+
+	lock = _get_rclone_fetch_lock(local_path)
+	with lock:
+		if local_path.exists():
+			return True
+		local_path.parent.mkdir(parents=True, exist_ok=True)
+		cmd = [_rclone_bin(), 'copyto', remote_path, str(local_path)]
+		try:
+			logger.info(f"[ClipLib] Fetching missing file from remote: {remote_path} -> {local_path}")
+			result = subprocess.run(
+				cmd,
+				capture_output=True,
+				text=True,
+				encoding='utf-8',
+				errors='replace',
+				timeout=1800,
+			)
+			if result.returncode == 0 and local_path.exists():
+				return True
+			logger.warning(
+				f"[ClipLib] rclone fetch failed rc={result.returncode} "
+				f"remote={remote_path} stderr={result.stderr[-300:] if result.stderr else ''}"
+			)
+		except Exception as exc:
+			logger.warning(f"[ClipLib] rclone fetch crashed for {remote_path}: {exc}")
+	return local_path.exists()
+
+
+def _sync_clip_library_file_async(path_str: str | Path | None, app, reason: str = '') -> None:
+	"""Upload a local Clip Library file to the remote in the background."""
+	if not path_str:
+		return
+	local_path = Path(path_str)
+	if not local_path.exists():
+		return
+
+	def _worker():
+		with app.app_context():
+			remote_path = _clip_remote_path(local_path)
+			if not remote_path:
+				return
+			cmd = [_rclone_bin(), 'copyto', str(local_path), remote_path]
+			try:
+				logger.info(
+					f"[ClipLib] Uploading file to remote"
+					f"{' (' + reason + ')' if reason else ''}: {local_path} -> {remote_path}"
+				)
+				result = subprocess.run(
+					cmd,
+					capture_output=True,
+					text=True,
+					encoding='utf-8',
+					errors='replace',
+					timeout=1800,
+				)
+				if result.returncode != 0:
+					logger.warning(
+						f"[ClipLib] rclone upload failed rc={result.returncode} "
+						f"local={local_path} stderr={result.stderr[-300:] if result.stderr else ''}"
+					)
+			except Exception as exc:
+				logger.warning(f"[ClipLib] rclone upload crashed for {local_path}: {exc}")
+
+	threading.Thread(target=_worker, daemon=True).start()
 
 
 def _has_clip_library_column(column_name: str) -> bool:
@@ -199,6 +311,7 @@ def _generate_assets_async(clip_id: int, original_path: str, app):
 				thumb_path = str(thumb_dir / f"{clip.file_hash}_thumb.jpg")
 				if _generate_thumbnail(original_path, thumb_path):
 					clip.thumbnail_path = thumb_path
+					_sync_clip_library_file_async(thumb_path, app, reason='thumbnail')
 
 			# Proxy
 			if clip.media_type == 'video' and not clip.proxy_path:
@@ -207,6 +320,7 @@ def _generate_assets_async(clip_id: int, original_path: str, app):
 				proxy_path = str(proxy_dir / f"{clip.file_hash}_proxy.mp4")
 				if _generate_proxy(original_path, proxy_path):
 					clip.proxy_path = proxy_path
+					_sync_clip_library_file_async(proxy_path, app, reason='proxy')
 
 			# For images, use the image itself as thumbnail
 			if clip.media_type == 'image' and not clip.thumbnail_path:
@@ -400,6 +514,7 @@ def upload_clip():
 		)
 		db.session.add(clip)
 		db.session.commit()
+		_sync_clip_library_file_async(dest_path, current_app._get_current_object(), reason='upload')
 
 		# Generate thumbnail, proxy, embedding in background
 		_generate_assets_async(clip.id, str(dest_path), current_app._get_current_object())
@@ -538,7 +653,7 @@ def delete_clip(clip_id: int):
 def serve_clip_file(clip_id: int):
 	clip = ClipLibraryItem.query.get_or_404(clip_id)
 	p = Path(clip.file_path)
-	if not p.exists():
+	if not p.exists() and not ensure_clip_library_file_local(clip.file_path):
 		return jsonify(error="File not found on disk"), 404
 	return send_file(str(p), mimetype='application/octet-stream')
 
@@ -547,11 +662,11 @@ def serve_clip_file(clip_id: int):
 def serve_clip_proxy(clip_id: int):
 	clip = ClipLibraryItem.query.get_or_404(clip_id)
 	proxy = clip.proxy_path
-	if proxy and Path(proxy).exists():
+	if proxy and ensure_clip_library_file_local(proxy):
 		return send_file(proxy, mimetype='video/mp4')
 	# Fallback to original
 	p = Path(clip.file_path)
-	if p.exists():
+	if ensure_clip_library_file_local(clip.file_path):
 		return send_file(str(p), mimetype='application/octet-stream')
 	return jsonify(error="File not found"), 404
 
@@ -560,13 +675,13 @@ def serve_clip_proxy(clip_id: int):
 def serve_clip_thumbnail(clip_id: int):
 	clip = ClipLibraryItem.query.get_or_404(clip_id)
 	thumb = clip.thumbnail_path
-	if thumb and Path(thumb).exists():
+	if thumb and ensure_clip_library_file_local(thumb):
 		return send_file(thumb, mimetype='image/jpeg')
 	# For images, serve the original
-	if clip.media_type == 'image' and Path(clip.file_path).exists():
+	if clip.media_type == 'image' and ensure_clip_library_file_local(clip.file_path):
 		return send_file(clip.file_path, mimetype='application/octet-stream')
 	# Try generating on-the-fly if the original video exists
-	if clip.media_type == 'video' and clip.file_path and Path(clip.file_path).exists():
+	if clip.media_type == 'video' and clip.file_path and ensure_clip_library_file_local(clip.file_path):
 		try:
 			root = _clips_dir()
 			sub = _hash_subdir(clip.file_hash)
@@ -576,6 +691,7 @@ def serve_clip_thumbnail(clip_id: int):
 			if _generate_thumbnail(clip.file_path, thumb_path):
 				clip.thumbnail_path = thumb_path
 				db.session.commit()
+				_sync_clip_library_file_async(thumb_path, current_app._get_current_object(), reason='thumbnail-regenerated')
 				return send_file(thumb_path, mimetype='image/jpeg')
 		except Exception:
 			db.session.rollback()
@@ -873,6 +989,9 @@ def use_clip_in_scene(clip_id: int):
 	Body: { proceso1JobId, sceneNum }
 	"""
 	clip = ClipLibraryItem.query.get_or_404(clip_id)
+	ensure_clip_library_file_local(clip.file_path)
+	if clip.proxy_path:
+		ensure_clip_library_file_local(clip.proxy_path)
 	data = request.get_json(force=True)
 	pid = data.get('proceso1JobId')
 	scene_num = data.get('sceneNum')

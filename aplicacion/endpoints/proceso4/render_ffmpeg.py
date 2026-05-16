@@ -58,6 +58,14 @@ _IMAGE_MOTION_CACHE_VERSION = 'pillow-subpixel-v1'
 _IMAGE_MOTION_CACHE_LOCK = threading.Lock()
 
 
+def _ensure_clip_path_local(path_str: str) -> bool:
+	try:
+		from aplicacion.endpoints.clip_library import ensure_clip_library_file_local
+		return ensure_clip_library_file_local(path_str)
+	except Exception:
+		return Path(path_str).exists()
+
+
 def _normalize_image_motion_preset(value: object) -> str:
 	preset = str(value or 'auto').strip().lower()
 	return preset if preset in _IMAGE_MOTION_PRESETS else 'auto'
@@ -83,6 +91,8 @@ def _build_static_image_clip(
 	scene_num: int,
 	tag: str,
 ) -> bool:
+	if not _ensure_clip_path_local(clip.file_path):
+		return False
 	return _run_ffmpeg([
 		FFMPEG_BIN, '-y',
 		'-loop', '1', '-i', clip.file_path,
@@ -232,6 +242,8 @@ def _render_image_motion_clip(
 			logger.warning(f"[P4]{' ' + tag if tag else ''} image motion cache read failed: {exc}")
 
 	try:
+		if not _ensure_clip_path_local(image_path):
+			return False
 		Path(out).parent.mkdir(parents=True, exist_ok=True)
 		src = ImageOps.exif_transpose(Image.open(image_path)).convert('RGB')
 		src_w, src_h = src.size
@@ -535,6 +547,8 @@ def _pad_to_duration(clip_path: str, target_duration: float, work_dir: Path,
 def _encode_segment(src_or_lavfi: str, is_lavfi: bool, out: str,
 					 t: float, ss: float = 0.0, tag: str = '') -> bool:
 	"""Encode a single video segment to 1920x1080 H.264 with no audio."""
+	if not is_lavfi and not _ensure_clip_path_local(src_or_lavfi):
+		return False
 	input_args = (['-f', 'lavfi', '-i', src_or_lavfi] if is_lavfi
 				  else (['-ss', str(ss)] if ss > 0 else []) + ['-i', src_or_lavfi])
 	return _run_ffmpeg([
@@ -560,33 +574,36 @@ def _build_single_clip(clip: Proceso4SceneMedia, scene_duration: float, work_dir
 	if clip.media_type == 'image':
 		ok = _build_image_motion_clip(clip, scene_duration, out, scene_num, tag=f'S{scene_num} image')
 	else:
-		spd = clip.speed if clip.speed and clip.speed > 0 else 1.0
-		trim_start = clip.trim_start or 0.0
-		trim_end = clip.trim_end if clip.trim_end else (trim_start + scene_duration * spd)
-		raw_dur = trim_end - trim_start  # source frames to read (before speed)
-		# After speed, the clip contributes raw_dur/spd seconds of output
-		clip_out_dur = min(raw_dur / spd, scene_duration)
-		if abs(spd - 1.0) > 0.01:
-			pts_factor = 1.0 / spd  # 2x speed → 0.5*PTS (faster)
-			vf = f'{_SCALE_VF},setpts={pts_factor:.6f}*PTS'
-			logger.info(f"[P4] S{scene_num}: speed={spd}x setpts={pts_factor:.4f}*PTS raw={raw_dur:.2f}s eff={clip_out_dur:.2f}s")
+		if not _ensure_clip_path_local(clip.file_path):
+			ok = False
 		else:
-			vf = _SCALE_VF
-		# Limit input reading to raw_dur; hard-cap OUTPUT to scene_duration
-		# to prevent frame-rounding overshoot from accumulating across scenes.
-		input_args = (['-ss', str(trim_start)] if trim_start > 0 else []) + ['-i', clip.file_path]
-		cmd = [
-			FFMPEG_BIN, '-y',
-			*input_args,
-			'-t', str(raw_dur),
-			'-vf', vf,
-			'-c:v', VIDEO_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30', '-an',
-		]
-		# If speed changes the output duration, add hard output cap
-		if abs(spd - 1.0) > 0.01:
-			cmd.extend(['-t', str(scene_duration)])
-		cmd.append(out)
-		ok = _run_ffmpeg(cmd, tag=f'S{scene_num} video spd={spd}x')
+			spd = clip.speed if clip.speed and clip.speed > 0 else 1.0
+			trim_start = clip.trim_start or 0.0
+			trim_end = clip.trim_end if clip.trim_end else (trim_start + scene_duration * spd)
+			raw_dur = trim_end - trim_start  # source frames to read (before speed)
+			# After speed, the clip contributes raw_dur/spd seconds of output
+			clip_out_dur = min(raw_dur / spd, scene_duration)
+			if abs(spd - 1.0) > 0.01:
+				pts_factor = 1.0 / spd  # 2x speed → 0.5*PTS (faster)
+				vf = f'{_SCALE_VF},setpts={pts_factor:.6f}*PTS'
+				logger.info(f"[P4] S{scene_num}: speed={spd}x setpts={pts_factor:.4f}*PTS raw={raw_dur:.2f}s eff={clip_out_dur:.2f}s")
+			else:
+				vf = _SCALE_VF
+			# Limit input reading to raw_dur; hard-cap OUTPUT to scene_duration
+			# to prevent frame-rounding overshoot from accumulating across scenes.
+			input_args = (['-ss', str(trim_start)] if trim_start > 0 else []) + ['-i', clip.file_path]
+			cmd = [
+				FFMPEG_BIN, '-y',
+				*input_args,
+				'-t', str(raw_dur),
+				'-vf', vf,
+				'-c:v', VIDEO_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30', '-an',
+			]
+			# If speed changes the output duration, add hard output cap
+			if abs(spd - 1.0) > 0.01:
+				cmd.extend(['-t', str(scene_duration)])
+			cmd.append(out)
+			ok = _run_ffmpeg(cmd, tag=f'S{scene_num} video spd={spd}x')
 
 	if not ok or not _file_ok(out):
 		logger.warning(f"[P4] Single clip encode failed for scene {scene_num}, using black screen")
@@ -625,6 +642,9 @@ def _build_indice_clip(
 	Falls back to static overlay → plain image → black screen on failure.
 	"""
 	out = str(work_dir / f'scene_{scene_num}.mp4')
+	if not _ensure_clip_path_local(clip.file_path):
+		_build_black_scene(scene_duration, work_dir, scene_num)
+		return out
 
 	# Font path — Montserrat Black (project asset, portable across machines)
 	_raw_font = os.path.join(
@@ -1162,23 +1182,26 @@ def _build_multi_clip(clips: list[Proceso4SceneMedia], scene_duration: float, wo
 		if clip.media_type == 'image':
 			ok = _build_image_motion_clip(clip, clip_dur, sub_out, scene_num, tag=f'S{scene_num} sub{i} image')
 		else:
-			spd = clip.speed if clip.speed and clip.speed > 0 else 1.0
-			trim_start = clip.trim_start or 0.0
-			raw_dur = clip_dur * spd  # source frames to supply before setpts
-			if abs(spd - 1.0) > 0.01:
-				pts_factor = 1.0 / spd
-				vf = f'{_SCALE_VF},setpts={pts_factor:.6f}*PTS'
+			if not _ensure_clip_path_local(clip.file_path):
+				ok = False
 			else:
-				vf = _SCALE_VF
-			input_args = (['-ss', str(trim_start)] if trim_start > 0 else []) + ['-i', clip.file_path]
-			ok = _run_ffmpeg([
-				FFMPEG_BIN, '-y',
-				*input_args,
-				'-t', str(raw_dur),
-				'-vf', vf,
-				'-c:v', VIDEO_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30', '-an',
-				sub_out,
-			], tag=f'S{scene_num} sub{i} video spd={spd}x')
+				spd = clip.speed if clip.speed and clip.speed > 0 else 1.0
+				trim_start = clip.trim_start or 0.0
+				raw_dur = clip_dur * spd  # source frames to supply before setpts
+				if abs(spd - 1.0) > 0.01:
+					pts_factor = 1.0 / spd
+					vf = f'{_SCALE_VF},setpts={pts_factor:.6f}*PTS'
+				else:
+					vf = _SCALE_VF
+				input_args = (['-ss', str(trim_start)] if trim_start > 0 else []) + ['-i', clip.file_path]
+				ok = _run_ffmpeg([
+					FFMPEG_BIN, '-y',
+					*input_args,
+					'-t', str(raw_dur),
+					'-vf', vf,
+					'-c:v', VIDEO_ENCODER, '-pix_fmt', 'yuv420p', '-r', '30', '-an',
+					sub_out,
+				], tag=f'S{scene_num} sub{i} video spd={spd}x')
 
 		if ok and _file_ok(sub_out):
 			sub_clips.append(sub_out)
@@ -1381,4 +1404,3 @@ def _build_multi_clip_concat(sub_clips: list[str], scene_num: int, work_dir: Pat
 		return sub_clips[0]
 
 	return out
-

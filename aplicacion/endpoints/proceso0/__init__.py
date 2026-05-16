@@ -30,7 +30,7 @@ ALLOWED_IMAGE_MIMETYPES = {
 
 def _get_thumbnail_dir(project_id: str) -> Path:
     """Return (and create) the folder that stores the thumbnail for a given project."""
-    base = Path(current_app.config.get('THUMBNAILS_DIR', r'D:\scienceluxe_2026\thumbnails'))
+    base = Path(current_app.config['THUMBNAILS_DIR'])
     project_dir = base / project_id
     project_dir.mkdir(parents=True, exist_ok=True)
     return project_dir

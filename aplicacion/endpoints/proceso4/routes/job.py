@@ -15,6 +15,7 @@ from ..helpers import (
 	get_job_dir,
 	get_or_create_job,
 	get_or_create_subprocess_state,
+	normalize_render_state_output_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,12 +80,19 @@ def get_job(pid: int):
 @proceso4_bp.route('/jobs/<int:pid>/subprocesses', methods=['GET'])
 def list_subprocess_states(pid: int):
 	get_or_create_job(pid)
+	get_job_dir(pid)
 	states = (
 		Proceso4SubprocessState.query
 		.filter_by(proceso1_job_id=pid)
 		.order_by(Proceso4SubprocessState.id)
 		.all()
 	)
+	changed = False
+	for state in states:
+		if normalize_render_state_output_path(state):
+			changed = True
+	if changed:
+		db.session.commit()
 	db.session.commit()
 	result = [_enrich_auto_indice_entry(pid, s.to_dict()) for s in states]
 	return jsonify(result)
@@ -93,7 +101,10 @@ def list_subprocess_states(pid: int):
 @proceso4_bp.route('/jobs/<int:pid>/subprocesses/<string:key>', methods=['GET'])
 def get_subprocess_state(pid: int, key: str):
 	get_or_create_job(pid)
+	get_job_dir(pid)
 	state = get_or_create_subprocess_state(pid, key)
+	if normalize_render_state_output_path(state):
+		db.session.commit()
 	db.session.commit()
 	return jsonify(_enrich_auto_indice_entry(pid, state.to_dict()))
 
@@ -105,4 +116,3 @@ def update_subprocess_state(pid: int, key: str):
 	body = request.get_json(force=True) or {}
 	saved = _save_state(state, body)
 	return jsonify(saved.to_dict())
-

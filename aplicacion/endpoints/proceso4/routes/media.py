@@ -23,6 +23,8 @@ from ..helpers import (
 	_effective_clip_duration,
 	_get_video_duration,
 	_generate_proxy_async,
+	ensure_scene_media_local_file,
+	ensure_scene_media_proxy_local_file,
 )
 from ..render_ffmpeg import (
 	_normalize_image_motion_preset,
@@ -107,7 +109,7 @@ def upload_scene_media(pid: int, scene_num: int):
 	remaining = max(0, scene_duration - already_covered) if scene_duration else 5.0
 
 	# ── Save to clip library (content-addressed) ──────────────────────
-	clips_dir = Path(current_app.config.get('CLIPS_LIBRARY_DIR', r'H:\Mi unidad\Scienceluxe_clips'))
+	clips_dir = Path(current_app.config['CLIPS_LIBRARY_DIR'])
 	clips_dir.mkdir(parents=True, exist_ok=True)
 
 	# Save to temp, compute SHA-256
@@ -182,7 +184,11 @@ def upload_scene_media(pid: int, scene_num: int):
 		db.session.flush()  # get library_clip.id
 
 		# Generate thumbnail, proxy, embedding in background
-		from aplicacion.endpoints.clip_library import _generate_assets_async as _lib_generate_assets
+		from aplicacion.endpoints.clip_library import (
+			_generate_assets_async as _lib_generate_assets,
+			_sync_clip_library_file_async as _lib_sync_clip_file_async,
+		)
+		_lib_sync_clip_file_async(dest_path, current_app._get_current_object(), reason='scene-upload')
 		_lib_generate_assets(library_clip.id, out_path, current_app._get_current_object())
 
 	# ── file_path for Proceso4SceneMedia points to library file ───────
@@ -336,7 +342,7 @@ def serve_media_file(pid: int, media_id: int):
 	if record.proceso1_job_id != pid:
 		return jsonify({'error': 'Not found'}), 404
 	path = Path(record.file_path)
-	if not path.exists():
+	if not path.exists() and not ensure_scene_media_local_file(record):
 		return jsonify({'error': 'File not found on disk'}), 404
 
 	# Determine mimetype
@@ -364,12 +370,12 @@ def serve_media_proxy(pid: int, media_id: int):
 	# Try proxy first
 	if record.proxy_path:
 		proxy_p = Path(record.proxy_path)
-		if proxy_p.exists():
+		if proxy_p.exists() or ensure_scene_media_proxy_local_file(record):
 			return send_file(str(proxy_p), mimetype='video/mp4', conditional=True)
 
 	# Fallback to original
 	path = Path(record.file_path)
-	if not path.exists():
+	if not path.exists() and not ensure_scene_media_local_file(record):
 		return jsonify({'error': 'File not found on disk'}), 404
 	ext = path.suffix.lower()
 	mime_map = {
@@ -377,4 +383,3 @@ def serve_media_proxy(pid: int, media_id: int):
 		'.mkv': 'video/x-matroska', '.webm': 'video/webm',
 	}
 	return send_file(str(path), mimetype=mime_map.get(ext, 'video/mp4'), conditional=True)
-

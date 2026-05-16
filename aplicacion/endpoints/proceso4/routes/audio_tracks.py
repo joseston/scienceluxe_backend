@@ -18,9 +18,24 @@ from aplicacion.models.proceso4 import (
 
 from .. import proceso4_bp
 from ..constants import PISTAS_DIR, SECTIONS_ORDER
-from ..helpers import get_or_create_job, get_job_dir, get_or_create_subprocess_state, _save_state
+from ..helpers import (
+	get_or_create_job,
+	get_job_dir,
+	get_or_create_subprocess_state,
+	_save_state,
+	normalize_audio_track_file_path,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_audio_tracks(tracks: list[Proceso4AudioTrack]) -> None:
+	changed = False
+	for track in tracks:
+		if normalize_audio_track_file_path(track):
+			changed = True
+	if changed:
+		db.session.commit()
 
 # ---------------------------------------------------------------------------
 # Audio Tracks (music, sfx)
@@ -66,6 +81,7 @@ def upload_audio_track(pid: int):
 def list_audio_tracks(pid: int):
 	get_or_create_job(pid)
 	tracks = Proceso4AudioTrack.query.filter_by(proceso1_job_id=pid).all()
+	_normalize_audio_tracks(tracks)
 	db.session.commit()
 	return jsonify([t.to_dict() for t in tracks])
 
@@ -95,6 +111,8 @@ def delete_audio_track(pid: int, track_id: int):
 	record = Proceso4AudioTrack.query.get_or_404(track_id)
 	if record.proceso1_job_id != pid:
 		return jsonify({'error': 'Not found'}), 404
+	if normalize_audio_track_file_path(record):
+		db.session.commit()
 
 	try:
 		fp = Path(record.file_path)
@@ -115,6 +133,8 @@ def serve_audio_track_file(pid: int, track_id: int):
 	record = Proceso4AudioTrack.query.get_or_404(track_id)
 	if record.proceso1_job_id != pid:
 		return jsonify({'error': 'Not found'}), 404
+	if normalize_audio_track_file_path(record):
+		db.session.commit()
 	fp = Path(record.file_path)
 	if not fp.exists():
 		return jsonify({'error': 'Audio track file not found on disk'}), 404

@@ -8,6 +8,7 @@ import sys
 from aplicacion import db
 from aplicacion.models.proceso1 import Proceso1Job
 from aplicacion.models.proceso2 import Proceso2Job, Proceso2SubprocessState
+from config import STORAGE_ROOT as STORAGE_ROOT_CONFIG
 
 
 proceso2_bp = Blueprint('proceso2', __name__)
@@ -21,7 +22,7 @@ def ensure_workspace_imports():
 
 
 # Raíz de almacenamiento persistente en disco externo/local
-STORAGE_ROOT = Path("D:/scienceluxe_2026")
+STORAGE_ROOT = Path(STORAGE_ROOT_CONFIG)
 
 
 def _get_video_id(proceso1_job_id: int) -> str:
@@ -38,7 +39,7 @@ def _get_video_id(proceso1_job_id: int) -> str:
 
 
 def get_job_dir(proceso1_job_id: int) -> Path:
-	# D:\scienceluxe_2026\job_<id>_<video_id>\
+	# {STORAGE_ROOT}/job_<id>_<video_id>/
 	video_id = _get_video_id(proceso1_job_id)
 	return STORAGE_ROOT / f'job_{proceso1_job_id}_{video_id}'
 

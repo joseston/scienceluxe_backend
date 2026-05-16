@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from .prompt_templates import SECTIONS_ORDER
 
-PISTAS_DIR = Path(r'D:\scienceluxe_2026\pistas')
+PISTAS_DIR = Path(os.environ.get('PISTAS_DIR', str(Path.home() / 'scienceluxe_2026' / 'pistas')))
 
 _SCALE_VF = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2'
 _IMAGE_MOTION_PRESETS = {

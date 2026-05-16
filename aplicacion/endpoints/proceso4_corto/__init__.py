@@ -70,6 +70,12 @@ def get_job_dir(pid: int) -> Path:
 	return get_workspace_data_dir() / 'proceso4_corto' / str(pid)
 
 
+def _prepare_render_work_dir(work_dir: Path) -> None:
+	"""Start each render from a clean workspace to avoid stale intermediates."""
+	shutil.rmtree(work_dir, ignore_errors=True)
+	work_dir.mkdir(parents=True, exist_ok=True)
+
+
 def get_or_create_job(pid: int) -> Proceso4CortoJob:
 	Proceso1CortoJob.query.get_or_404(pid)
 	job = Proceso4CortoJob.query.get(pid)
@@ -1071,7 +1077,7 @@ def render_video(pid: int):
 
 	job_dir = get_job_dir(pid)
 	work_dir = job_dir / 'output' / 'render_work'
-	work_dir.mkdir(parents=True, exist_ok=True)
+	_prepare_render_work_dir(work_dir)
 	output_path = job_dir / 'output' / 'final_video.mp4'
 
 	try:
@@ -1327,6 +1333,9 @@ def render_video(pid: int):
 				'output': {'error': f'FFmpeg error: {result.stderr[-300:]}'},
 			})
 			return jsonify({'error': 'FFmpeg render failed.', 'details': result.stderr[-300:]}), 500
+
+		# Keep only the final artifact once the render completed successfully.
+		shutil.rmtree(work_dir, ignore_errors=True)
 
 		_save_state(render_state, {
 			'status': 'completed',
